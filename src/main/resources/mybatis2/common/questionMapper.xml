@@ -1,0 +1,334 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.bootdo.common.dao1.questionDao">
+
+	<select id="list"  parameterType="java.util.Map" resultType="java.util.HashMap">
+	SELECT q.questionnaireId AS id,q.questionnaireCn AS `name`,q.subTitle AS `type`,
+		q.begindate,CASE WHEN q.enddate IS NULL THEN '-' ELSE q.enddate END enddate,h.quantity,
+		CASE WHEN q.begindate IS NULL AND q.enddate IS NULL THEN 1 
+			 WHEN q.begindate IS NOT NULL AND q.enddate IS NULL THEN 2 ELSE 3 END flag
+		FROM ls_questionnaire_info q 
+		LEFT JOIN 
+			(SELECT COUNT(DISTINCT U.userId) AS quantity ,U.questionnaireId AS questionnaireId 
+			FROM ls_user_answer_history U 
+			LEFT JOIN ls_interview_user_info i ON i.userId = u.userId 
+			WHERE i.end='Y'
+	        GROUP BY U.questionnaireId
+		)h ON h.questionnaireId=q.questionnaireId 
+		WHERE q.isshow=1
+		<if test="typeId!=0">  AND q.questionnairetype=#{typeId}</if>
+		ORDER BY q.begindate DESC 
+	</select>
+	
+	<update id="beginResearch" parameterType="java.util.Map">
+		UPDATE ls_questionnaire_info 
+		SET begindate =  CURDATE()
+		WHERE questionnaireId=#{id}
+	</update>
+	
+	<update id="endResearch" parameterType="java.util.Map">
+		UPDATE ls_questionnaire_info 
+		SET enddate =  CURDATE(),
+			finish = 1
+		WHERE questionnaireId=#{id}
+	</update>
+	
+	<select id="questionIdOne" parameterType="java.util.Map" resultType="int">
+	SELECT q.id FROM ls_question_info q 
+	WHERE q.questionnaireId=#{id} AND q.optionFrom IS NOT NULL AND q.optionFrom !='' 
+	AND q.titleFrom IS NULL OR q.titleFrom =''
+	</select>
+	<select id="questionIdTwo" parameterType="java.util.Map" resultType="int">
+	SELECT q.id FROM ls_question_info q 
+	WHERE q.questionnaireId=#{id} AND q.optionFrom IS NOT NULL AND q.optionFrom !=''
+	AND q.titleFrom IS NOT NULL AND q.titleFrom !=''
+	</select>
+	
+	<select id="questionName" parameterType="java.util.Map" resultType="String">
+	SELECT l.questionnaireCn  FROM ls_questionnaire_info l
+ 	WHERE l.questionnaireId=#{id}
+	</select>
+	 
+	 
+	<update id="changeBefore" parameterType="java.util.Map">
+	UPDATE ls_option_info a 
+	JOIN (
+		SELECT o.optionId FROM ls_option_info o 
+		LEFT JOIN ls_question_option l ON o.optionId=l.optionId
+		LEFT JOIN ls_question_info q ON q.id=l.questionId
+		WHERE q.questionnaireId=#{id}
+		AND SUBSTR(q.questionseq,1,1)='A'
+		AND LOCATE(".",o.optionCn)>0 
+	)b ON a.optionId=b.optionId 
+	SET a.optionCn=REPLACE(a.optionCn,'.','。')
+	</update>
+	
+	<update id="changeAfter" parameterType="java.util.Map">
+	UPDATE ls_option_info a 
+	JOIN (
+		SELECT o.optionId FROM ls_option_info o 
+		LEFT JOIN ls_question_option l ON o.optionId=l.optionId
+		LEFT JOIN ls_question_info q ON q.id=l.questionId
+		WHERE q.questionnaireId=#{id}
+		AND SUBSTR(q.questionseq,1,1)='A'
+		AND LOCATE("。",o.optionCn)>0 
+	)b ON a.optionId=b.optionId 
+	SET a.optionCn=REPLACE(a.optionCn,'。','.')
+	</update>
+	 
+	 
+	
+	<select id="title" parameterType="java.util.Map" resultType="String">
+		<![CDATA[SELECT REPLACE(REPLACE(IF(SUBSTR(questionseq, 1, 1) = 'A' AND
+                          CONCAT(',max(case when questionseq=''',
+                                 questionseq,
+                                 ''' and optionCn=''',
+                                 optionCn,
+                                 ''' then aa else "" end) as ',
+                                 bb) IS NOT NULL OR questionCn LIKE '%场景%',
+                          CONCAT(',max(case when questionseq=''',
+                                 questionseq,
+                                 ''' and optionCn=''',
+                                 optionCn,
+                                 ''' then aa else "" end) as ',
+                                 bb),
+                          CONCAT(',max(case when questionseq=''',
+                                 questionseq,
+                                 ''' then aa else "" end) as ',
+                                 bb)),
+                       '<span style="color: red">',
+                       ''),
+               '</span>',
+               '') AS title
+  FROM (SELECT q.questionseq,
+               q.questionId,
+               o.optionCn,q.questionCn,
+               CASE
+                 WHEN SUBSTR(q.questionseq, 1, 1) = 'A' OR q.questionCn LIKE '%场景%' THEN
+                  IFNULL(CONCAT('"', q.questionseq, '(', o.optionCn, ')"'),
+                         CONCAT('"', q.questionseq, '、', Q.questionCn, '"'))
+                 ELSE
+                  IF(o.optionCn IS NOT NULL,
+                     CONCAT('"', q.questionseq, '、', Q.questionCn, '"'),
+                     CONCAT('"', q.questionseq, '、', Q.questionCn, '"'))
+               END bb,
+               CASE
+                 WHEN SUBSTR(q.questionseq, 1, 1) = 'A' THEN
+                  IFNULL(o.score, 0)
+                 ELSE
+                  0
+               END aa
+          FROM ls_question_info q]]>
+LEFT JOIN 
+
+(
+SELECT questionId,optionid,questionnaireId FROM ls_question_option WHERE questionnaireId=#{id}
+<foreach collection="questionIdOne" item="item" open="" separator=" " close="">
+UNION ALL 
+SELECT ${item} questionId,o.optionid,o.questionnaireId  
+FROM ls_option_info o WHERE o.optionId IN (SELECT o.optionId
+						FROM ls_option_info o
+						LEFT JOIN ls_question_option l ON l.optionid=o.optionid
+						LEFT JOIN ls_question_info q ON l.questionId=q.id
+						WHERE q.id IN (SELECT q.optionFrom FROM ls_question_info q WHERE q.id=${item} ))
+</foreach> 
+
+<foreach collection="questionIdTwo" item="item" open="" separator="  " close="">
+UNION ALL
+SELECT ${item} questionId,o.optionid,o.questionnaireId 
+FROM ls_option_info o 
+WHERE o.p_optionId!=o.optionId AND
+o.p_optionId IN 
+(SELECT o.optionId
+FROM ls_option_info o
+LEFT JOIN ls_question_option l ON l.optionid=o.optionid
+LEFT JOIN ls_question_info q ON l.questionId=q.id
+WHERE q.id IN 
+	(SELECT CASE WHEN 
+		(SELECT q.optionFrom FROM ls_question_info q WHERE q.id IN(SELECT q.optionFrom FROM ls_question_info q WHERE q.id=${item} )) IS NULL
+		THEN (SELECT q.optionFrom FROM ls_question_info q WHERE q.id=${item} )
+		ELSE(SELECT q.optionFrom FROM ls_question_info q WHERE q.id IN(SELECT q.optionFrom FROM ls_question_info q WHERE q.id=${item} ))END
+		))
+</foreach>
+UNION
+ SELECT DISTINCT q.id questionId,h.optionid,h.questionnaireId FROM ls_user_answer_history h 
+ LEFT JOIN ls_question_info q ON h.questionId=q.questionId AND h.questionnaireId=q.questionnaireId 
+ WHERE h.questionnaireId=#{id} 
+ UNION
+			SELECT  q.id AS questionId,  o.optionid, o.questionnaireId FROM ls_option_info o
+			LEFT JOIN ls_question_info q ON q.questionnaireId=o.questionnaireId
+			WHERE o.optionid!=o.p_optionId 
+			AND q.optionFrom IS NOT NULL 
+			AND q.titleFrom IS NOT NULL
+			AND q.optionFrom !='' 
+			AND q.titleFrom !=''
+			AND q.questionnaireId=#{id} 
+			
+			ORDER BY questionId
+)
+qo ON q.id=qo.questionId AND q.questionnaireId=qo.questionnaireId
+<![CDATA[
+LEFT JOIN ls_option_info o
+            ON qo.optionId = o.optionid
+           AND qo.questionnaireId = o.questionnaireId
+         WHERE q.questionnaireId = #{id}
+           AND q.isShow = 1
+           AND qo.optionId IS NOT NULL
+         GROUP BY q.questionseq, o.optionCn, q.questionId,q.questionCn
+        UNION ALL
+        SELECT q.questionseq,
+               q.questionId,
+               o.optionCn,q.questionCn,
+               CASE
+                 WHEN SUBSTR(q.questionseq, 1, 1) = 'A' OR q.questionCn LIKE '%场景%' THEN
+                  IFNULL(CONCAT('"', q.questionseq, '(', o.optionCn, ')"'),
+                         CONCAT('"', q.questionseq, '、', Q.questionCn, '"'))
+                 ELSE
+                  IF(o.optionCn IS NOT NULL,
+                     CONCAT('"', q.questionseq, '、', Q.questionCn, '"'),
+                     CONCAT('"', q.questionseq, '、', Q.questionCn, '"'))
+               END bb,
+               CASE
+                 WHEN SUBSTR(q.questionseq, 1, 1) = 'A' THEN
+                  IFNULL(o.score, 0)
+                 ELSE
+                  0
+               END aa
+          FROM ls_question_info q
+          LEFT JOIN ls_question_option qo
+            ON q.id = qo.questionId
+           AND q.questionnaireId = qo.questionnaireId
+          LEFT JOIN ls_option_info o
+            ON qo.optionId = o.optionid
+           AND qo.questionnaireId = o.questionnaireId
+         WHERE q.questionnaireId = #{id}
+           AND q.isShow = 1
+           AND q.id NOT IN (SELECT q.id FROM ls_question_info q 
+							LEFT JOIN ls_question_option l ON l.questionId=q.id
+							LEFT JOIN ls_option_info o ON o.optionId=l.optionId
+							WHERE q.optionFrom IS NOT NULL AND q.questionnaireId=#{id} AND l.sort IS NULL )
+         GROUP BY q.questionseq, o.optionCn, q.questionId,q.questionCn) a
+ GROUP BY questionseq, questionId, bb
+ ORDER BY questionId, aa
+]]>
+	</select>
+	
+
+
+
+
+
+
+
+
+
+
+	<select id="map" parameterType="java.util.Map" resultType="java.util.LinkedHashMap" >
+	
+	
+SELECT CASE WHEN `date` IS NOT NULL THEN `date` ELSE "" END AS `date`,
+CASE WHEN dealerscode IS NOT NULL THEN dealerscode ELSE "" END AS dealerscode,
+CASE WHEN userId IS NOT NULL THEN userId ELSE "" END AS userId,
+CASE WHEN region IS NOT NULL THEN region ELSE "" END AS region,
+CASE WHEN seller IS NOT NULL THEN seller ELSE "" END AS seller
+<foreach collection="title" item="item" open="" separator=" " close="">
+ ${item}
+</foreach>
+FROM( 
+SELECT iu.mobile,DATE_FORMAT(iu.finishDate, '%Y/%m/%d %H:%i') AS `date`,iu.dealerscode,ua.userId,lb.region,iu.seller,q.questionseq,q.questionId,o.optionCn
+, REPLACE(  REPLACE(  REPLACE(
+CASE WHEN SUBSTR(q.questionseq,1,1) = 'A' OR q.questionCn LIKE '%场景%' THEN IF(o.optionCn IS NOT NULL,MAX(CASE WHEN o.optionId = ua.optionId THEN IFNULL(ua.value,IF(q.topicId=3,NULL,'1')) ELSE '0' END),MAX(ua.value))
+    ELSE IF(o.optionCn IS NOT NULL,IF(O.isOther=1 OR q.questionCn LIKE '%场景%',MAX(ua.value),MAX(CASE WHEN o.optionId = ua.optionId THEN o.optionCn ELSE "" END)),MAX(ua.value))
+END,'[',''),']',''),'"','') aa
+,CASE WHEN SUBSTR(q.questionseq,1,1) = 'A' THEN IFNULL(CONCAT('"',q.questionseq,'(',o.optionCn,')"'),CONCAT('"',q.questionseq,'、',Q.questionCn,'"'))
+    ELSE IF(o.optionCn IS NOT NULL,CONCAT('"',q.questionseq,'、',Q.questionCn,'"'),CONCAT('"',q.questionseq,'、',Q.questionCn,'"'))
+END bb
+FROM ls_question_info q 
+LEFT JOIN 
+
+(
+SELECT questionId,optionid,questionnaireId FROM ls_question_option WHERE questionnaireId=#{id}
+
+<foreach collection="questionIdOne" item="item" open="" separator="" close="">
+UNION ALL
+SELECT ${item} questionId,o.optionid,o.questionnaireId  
+FROM ls_option_info o WHERE o.optionId IN (SELECT o.optionId
+						FROM ls_option_info o
+						LEFT JOIN ls_question_option l ON l.optionid=o.optionid
+						LEFT JOIN ls_question_info q ON l.questionId=q.id
+						WHERE q.id IN (SELECT q.optionFrom FROM ls_question_info q WHERE q.id=${item} ))
+</foreach> 
+
+<foreach collection="questionIdTwo" item="item" open="" separator=" " close="">
+UNION ALL
+SELECT ${item} questionId,o.optionid,o.questionnaireId 
+FROM ls_option_info o 
+WHERE o.p_optionId!=o.optionId AND
+o.p_optionId IN 
+(SELECT o.optionId
+FROM ls_option_info o
+LEFT JOIN ls_question_option l ON l.optionid=o.optionid
+LEFT JOIN ls_question_info q ON l.questionId=q.id
+WHERE q.id IN 
+	(SELECT CASE WHEN 
+		(SELECT q.optionFrom FROM ls_question_info q WHERE q.id IN(SELECT q.optionFrom FROM ls_question_info q WHERE q.id=${item} )) IS NULL
+		THEN (SELECT q.optionFrom FROM ls_question_info q WHERE q.id=${item} )
+		ELSE(SELECT q.optionFrom FROM ls_question_info q WHERE q.id IN(SELECT q.optionFrom FROM ls_question_info q WHERE q.id=${item} ))END
+		))
+</foreach>
+UNION
+ SELECT DISTINCT q.id questionId,h.optionid,h.questionnaireId FROM ls_user_answer_history h 
+ LEFT JOIN ls_question_info q ON h.questionId=q.questionId AND h.questionnaireId=q.questionnaireId 
+ WHERE h.questionnaireId=#{id} 
+ UNION
+			SELECT  q.id AS questionId,  o.optionid, o.questionnaireId FROM ls_option_info o
+			LEFT JOIN ls_question_info q ON q.questionnaireId=o.questionnaireId
+			WHERE o.optionid!=o.p_optionId 
+			AND q.optionFrom IS NOT NULL 
+			AND q.titleFrom IS NOT NULL
+			AND q.optionFrom !='' 
+			AND q.titleFrom !=''
+			AND q.questionnaireId=#{id} 
+			ORDER BY questionId
+			 )
+ qo ON q.id=qo.questionId AND q.questionnaireId=qo.questionnaireId
+LEFT JOIN ls_option_info o ON qo.optionId=o.optionid AND qo.questionnaireId=o.questionnaireId
+JOIN ls_user_answer_history ua ON  
+ua.questionId=q.questionId AND ua.optionId=o.optionId AND ua.questionnaireId=qo.questionnaireId
+JOIN ls_interview_user_info iu ON ua.userId=iu.userId AND iu.`end`='Y'
+<!-- LEFT JOIN ls_buick_city lc ON lc.cityId=iu.cityId
+LEFT JOIN ls_buick_relation lb ON lc.cityCn=lb.city -->
+left join ls_buick_relation lb on lb.`code`=iu.dealerscode
+WHERE q.questionnaireId=#{id} AND q.isShow=1 AND ua.optionId IS NOT NULL
+GROUP BY iu.mobile,iu.finishDate,iu.dealerscode,ua.userId,lb.region,iu.seller,q.questionseq,o.optionCn,q.questionId
+UNION ALL
+SELECT iu.mobile,DATE_FORMAT(iu.finishDate, '%Y/%m/%d %H:%i') AS `date`,iu.dealerscode,ua.userId,lb.region,iu.seller,q.questionseq,q.questionId,o.optionCn
+, REPLACE(  REPLACE(  REPLACE(
+CASE WHEN SUBSTR(q.questionseq,1,1) = 'A' OR q.questionCn LIKE '%场景%' THEN IF(o.optionCn IS NOT NULL,MAX(CASE WHEN o.optionId = ua.optionId THEN IF(q.topicId=3,ua.value,'1') ELSE '0' END),MAX(ua.value))
+    ELSE IF(o.optionCn IS NOT NULL,MAX(CASE WHEN o.optionId = ua.optionId THEN o.score ELSE '0' END),MAX(ua.value))
+END,'[',''),']',''),'"','') aa
+,CASE WHEN SUBSTR(q.questionseq,1,1) = 'A' THEN IFNULL(CONCAT('"',q.questionseq,'(',o.optionCn,')"'),CONCAT('"',q.questionseq,'、',Q.questionCn,'"'))
+    ELSE IF(o.optionCn IS NOT NULL,CONCAT('"',q.questionseq,'、',Q.questionCn,'"'),CONCAT('"',q.questionseq,'、',Q.questionCn,'"'))
+END bb
+FROM ls_question_info q 
+LEFT JOIN ls_question_option qo ON q.id=qo.questionId AND q.questionnaireId=qo.questionnaireId
+LEFT JOIN ls_option_info o ON qo.optionId=o.optionid AND qo.questionnaireId=o.questionnaireId
+JOIN ls_user_answer_history ua ON ua.questionId=q.questionId AND ua.questionnaireId=q.questionnaireId AND ua.optionId IS NULL
+JOIN ls_interview_user_info iu ON ua.userId=iu.userId AND iu.`end`='Y'
+<!-- LEFT JOIN ls_buick_city lc ON lc.cityId=iu.cityId
+LEFT JOIN ls_buick_relation lb ON lc.cityCn=lb.city -->
+left join ls_buick_relation lb on lb.`code`=iu.dealerscode
+
+WHERE q.questionnaireId=#{id} AND q.isShow=1
+GROUP BY iu.mobile,iu.finishDate,iu.dealerscode,ua.userId,lb.region,iu.seller,q.questionseq,o.optionCn,q.questionId
+) a
+GROUP BY mobile,`date`,dealerscode,userId,region,`seller`
+		
+	</select>
+
+
+
+
+
+</mapper>

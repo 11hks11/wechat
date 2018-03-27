@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<meta charset="utf-8">
+<head th:include="include :: header"></head>
+<body class="gray-bg">
+	<div class="wrapper wrapper-content ">
+		<div class="col-sm-12">
+			<div class="ibox">
+				<div class="ibox-body">
+					<div id="exampleToolbar" role="group">
+						<!-- <button type="button" class="btn  btn-primary"
+							onclick="batchCode()">
+							<i class="" aria-hidden="true"></i>批量生成
+						</button>
+						<button type="button" class="btn  btn-success"
+							onclick="edit()">
+							<i class="" aria-hidden="true"></i>生成策略
+						</button> -->
+						<!-- <button type="button" class="btn  btn-primary"
+							onclick="dataOut()">
+							<i class="" aria-hidden="true"></i>导出报告
+						</button> -->
+						<div class="dropdown" >
+						<l style=" font-size:14px;">问卷类型:</l>
+						<select id="status" onchange="change()" class="btn btn-sm btn-primary dropdown-toggle"data-toggle="dropdown">
+							<option value="0">全部问卷</option>
+							<option value="1">新车问卷</option>
+							<option value="2">战败问卷</option>
+						</select>
+						</div>
+					</div>
+					<table id="exampleTable" data-mobile-responsive="true">
+					</table>
+				</div>
+			</div>
+		</div>
+	</div>
+	<div th:include="include :: footer"></div>
+	<script type="text/javascript" src="/js/appjs/common/generator/list.js"></script>
+</body>
+</html>
